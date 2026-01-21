@@ -53,10 +53,19 @@ num_label, num_id = num_cls_dict[args.dataset], num_ids_dict[args.dataset]
 # Model and Data
 # ---------
 def load_network(network):
-    save_path = os.path.join('./checkpoints', args.dataset, model_name, 'net_last.pth')
-    network.load_state_dict(torch.load(save_path, map_location=device))
+    ckpt = (
+        PROJECT_ROOT
+        / "checkpoints"
+        / attribute_detector
+        / model_name
+        / "net_last.pth"
+    )
 
-    print('Resume model from {}'.format(save_path))
+    if not ckpt.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
+
+    network.load_state_dict(torch.load(ckpt, map_location=device))
+    print(f"[MODEL] Loaded {ckpt}")
     return network
 
 def load_images(paths):
