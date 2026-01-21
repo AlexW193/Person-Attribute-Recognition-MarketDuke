@@ -36,7 +36,7 @@ transforms = T.Compose([
 # Argument
 # ---------
 parser = argparse.ArgumentParser()
-parser.add_argument('image_path', help='Path to test image')
+parser.add_argument('image_path', nargs='+', help='Path(s) to test image(s)')
 parser.add_argument('--dataset', default='market', type=str, help='dataset')
 parser.add_argument('--backbone', default='resnet50', type=str, help='model')
 parser.add_argument('--use-id', action='store_true', help='use identity loss')
@@ -59,19 +59,20 @@ def load_network(network):
     print('Resume model from {}'.format(save_path))
     return network
 
-def load_image(path):
-    src = Image.open(path)
-    src = transforms(src)
-    src = src.unsqueeze(dim=0)
-    return src
-
+def load_images(paths):
+    imgs = []
+    for p in paths:
+        img = Image.open(p).convert('RGB')
+        img = transforms(img)
+        imgs.append(img)
+    return torch.stack(imgs, dim=0)  # [B, C, H, W]
 
 model = get_model(model_name, num_label, use_id=args.use_id, num_id=num_id)
 model = load_network(model)
 model = model.to(device)
 model.eval()
 
-src = load_image(args.image_path).to(device)
+src = load_images(args.image_path).to(device)
 
 
 ######################################################################
@@ -88,11 +89,15 @@ class predict_decoder(object):
         self.num_label = len(self.label_list)
 
     def decode(self, pred):
-        pred = pred.squeeze(dim=0)
-        for idx in range(self.num_label):
-            name, chooce = self.attribute_dict[self.label_list[idx]]
-            if chooce[pred[idx]]:
-                print('{}: {}'.format(name, chooce[pred[idx]]))
+        # pred: [B, num_label]
+        for b in range(pred.size(0)):
+            print(f'\nImage {b}:')
+            for idx in range(self.num_label):
+                name, chooce = self.attribute_dict[self.label_list[idx]]
+                if chooce[pred[b, idx]]:
+                    print(f'{name}: {chooce[pred[b, idx]]}')
+
+
 
 with torch.no_grad():
     if not args.use_id:
