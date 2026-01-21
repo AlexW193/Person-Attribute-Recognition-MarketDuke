@@ -48,7 +48,8 @@ num_label, num_id = num_cls_dict[args.dataset], num_ids_dict[args.dataset]
 # ---------
 def load_network(network):
     save_path = os.path.join('./checkpoints', args.dataset, model_name, 'net_last.pth')
-    network.load_state_dict(torch.load(save_path))
+    network.load_state_dict(torch.load(save_path, map_location=device))
+
     print('Resume model from {}'.format(save_path))
     return network
 
