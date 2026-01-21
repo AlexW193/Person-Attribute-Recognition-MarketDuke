@@ -6,6 +6,8 @@ from PIL import Image
 from torchvision import transforms as T
 from net import get_model
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
 
 ######################################################################
 # Settings
@@ -59,9 +61,11 @@ def load_image(path):
 
 model = get_model(model_name, num_label, use_id=args.use_id, num_id=num_id)
 model = load_network(model)
+model = model.to(device)
 model.eval()
 
-src = load_image(args.image_path)
+src = load_image(args.image_path).to(device)
+
 
 ######################################################################
 # Inference
@@ -83,11 +87,11 @@ class predict_decoder(object):
             if chooce[pred[idx]]:
                 print('{}: {}'.format(name, chooce[pred[idx]]))
 
-
-if not args.use_id:
-    out = model.forward(src)
-else:
-    out, _ = model.forward(src)
+with torch.no_grad():
+    if not args.use_id:
+        out = model.forward(src)
+    else:
+        out, _ = model.forward(src)
 
 pred = torch.gt(out, torch.ones_like(out)/2 )  # threshold=0.5
 
