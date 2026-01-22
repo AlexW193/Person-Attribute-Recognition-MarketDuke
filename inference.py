@@ -36,10 +36,11 @@ transforms = T.Compose([
 # Argument
 # ---------
 parser = argparse.ArgumentParser()
-parser.add_argument('image_path', help='Path to test image')
 parser.add_argument('--dataset', default='market', type=str, help='dataset')
 parser.add_argument('--backbone', default='resnet50', type=str, help='model')
 parser.add_argument('--use-id', action='store_true', help='use identity loss')
+parser.add_argument('input', help='Image, directory, or txt file')
+parser.add_argument('--batch-size', type=int, default=256)
 args = parser.parse_args()
 
 assert args.dataset in ['market', 'duke']
@@ -50,16 +51,67 @@ num_label, num_id = num_cls_dict[args.dataset], num_ids_dict[args.dataset]
 
 
 ######################################################################
+# Resolve text file or image dir
+# ---------
+from pathlib import Path
+
+def resolve_image_paths(input_arg):
+    p = Path(input_arg)
+
+    if p.is_dir():
+        return sorted([
+            x for x in p.iterdir()
+            if x.suffix.lower() in {'.jpg', '.jpeg', '.png'}
+        ])
+
+    if p.is_file() and p.suffix == '.txt':
+        with open(p) as f:
+            return [Path(line.strip()) for line in f if line.strip()]
+
+    if p.is_file():
+        return [p]
+
+    raise ValueError(f"Invalid input: {input_arg}")
+
+img_paths = resolve_image_paths(args.input)
+
+
+######################################################################
+# Image Dataset
+# ---------
+
+from torch.utils.data import Dataset, DataLoader
+
+class ImageDataset(Dataset):
+    def __init__(self, paths, transform):
+        self.paths = paths
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, idx):
+        path = self.paths[idx]
+        img = Image.open(path).convert("RGB")
+        img = self.transform(img)
+        return img, str(path)
+
+
+dataset = ImageDataset(img_paths, transforms)
+
+loader = DataLoader(
+    dataset,
+    batch_size=args.batch_size,
+    shuffle=False,
+    num_workers=4,
+    pin_memory=torch.cuda.is_available()
+)
+
+######################################################################
 # Model and Data
 # ---------
 def load_network(network):
-    ckpt = (
-        PROJECT_ROOT
-        / "checkpoints"
-        / attribute_detector
-        / model_name
-        / "net_last.pth"
-    )
+    ckpt = Path("checkpoints") / model_name / "net_last.pth"
 
     if not ckpt.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
@@ -68,11 +120,7 @@ def load_network(network):
     print(f"[MODEL] Loaded {ckpt}")
     return network
 
-def load_image(path):
-    src = Image.open(path)
-    src = transforms(src)
-    src = src.unsqueeze(dim=0)
-    return src
+
 
 
 model = get_model(model_name, num_label, use_id=args.use_id, num_id=num_id)
@@ -80,7 +128,6 @@ model = load_network(model)
 model = model.to(device)
 model.eval()
 
-src = load_image(args.image_path).to(device)
 
 
 ######################################################################
@@ -93,24 +140,43 @@ class predict_decoder(object):
             self.label_list = json.load(f)[dataset]
         with open('./doc/attribute.json', 'r') as f:
             self.attribute_dict = json.load(f)[dataset]
-        self.dataset = dataset
         self.num_label = len(self.label_list)
 
-    def decode(self, pred):
-        pred = pred.squeeze(dim=0)
+    def decode_to_dict(self, pred):
+        pred = pred.cpu()
+        result = {}
+
         for idx in range(self.num_label):
-            name, chooce = self.attribute_dict[self.label_list[idx]]
-            if chooce[pred[idx]]:
-                print('{}: {}'.format(name, chooce[pred[idx]]))
+            name, choice = self.attribute_dict[self.label_list[idx]]
+            if choice[pred[idx]]:
+                result[name] = choice[pred[idx]]
 
-with torch.no_grad():
-    if not args.use_id:
-        out = model.forward(src)
-    else:
-        out, _ = model.forward(src)
+        return result
 
-pred = torch.gt(out, torch.ones_like(out)/2 )  # threshold=0.5
 
 Dec = predict_decoder(args.dataset)
-Dec.decode(pred)
 
+model.eval()
+all_results = []
+
+with torch.no_grad():
+    for imgs, paths in loader:
+        imgs = imgs.to(device, non_blocking=True)
+
+        if not args.use_id:
+            out = model(imgs)
+        else:
+            out, _ = model(imgs)
+
+        pred = out > 0.5  # boolean tensor
+
+        for p, path in zip(pred, paths):
+            attrs = Dec.decode_to_dict(p)   # see below
+            all_results.append({
+                "image": path,
+                "attributes": attrs
+            })
+
+
+with open("results.json", "w") as f:
+    json.dump(all_results, f, indent=2)
