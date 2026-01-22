@@ -146,10 +146,14 @@ model.eval()
 class predict_decoder(object):
 
     def __init__(self, dataset):
-        with open('./doc/label.json', 'r') as f:
+        doc_dir = PROJECT_ROOT / "doc"
+
+        with open(doc_dir / "label.json", "r") as f:
             self.label_list = json.load(f)[dataset]
-        with open('./doc/attribute.json', 'r') as f:
+
+        with open(doc_dir / "attribute.json", "r") as f:
             self.attribute_dict = json.load(f)[dataset]
+
         self.num_label = len(self.label_list)
 
     def decode_to_dict(self, pred):
