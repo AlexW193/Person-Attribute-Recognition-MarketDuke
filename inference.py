@@ -114,7 +114,13 @@ loader = DataLoader(
 # Model and Data
 # ---------
 def load_network(network):
-    ckpt = PROJECT_ROOT / "checkpoints" / model_name / "net_last.pth"
+    ckpt = (
+    PROJECT_ROOT
+    / "checkpoints"
+    / args.dataset          # ← THIS was missing
+    / model_name
+    / "net_last.pth"
+    )
 
 
     if not ckpt.exists():
