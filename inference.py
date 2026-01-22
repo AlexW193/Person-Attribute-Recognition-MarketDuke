@@ -5,6 +5,9 @@ import argparse
 from PIL import Image
 from torchvision import transforms as T
 from net import get_model
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parent
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
@@ -111,7 +114,8 @@ loader = DataLoader(
 # Model and Data
 # ---------
 def load_network(network):
-    ckpt = Path("checkpoints") / model_name / "net_last.pth"
+    ckpt = PROJECT_ROOT / "checkpoints" / model_name / "net_last.pth"
+
 
     if not ckpt.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
